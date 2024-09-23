@@ -1,5 +1,5 @@
-// Selector sensor
-const int type_sensor = 1; // 0 for US sensor, 1 for IR sensor
+//Selector sensor
+const int type_sensor = 0; // 0 or 1 (US or IR)
 
 // Constants for pin connections for US sensor
 const int triggerPin = 11; // OC2A, pin D11
@@ -8,193 +8,236 @@ const int echoPin = 2;     // INT0, pin D2
 volatile long duration = 0; // To store pulse width from Echo
 volatile bool echoReceived = false;
 
-// IR sensor
+//IR sensor
 const int sensorPin = A2; // Analog input pin connected to the sensor's output
 
 void setup() {
-    set_text_monitor();
+  // put your setup code here, to run once:
 
-    switch (type_sensor) {
-        case 0:
-            set_US_sensor();
-            break;
-        case 1:
-            set_IR_sensor();
-            break;
-        default:
-            break;
-    }
+  set_text_monitor();
 
-    set_light_board();
+switch (type_sensor) {
+  case 0:
+ set_US_sensor();
+    break;
+  case 1:
+  set_IR_sensor();
+    break;
+  default:
+       break;
+}
+
+  set_light_board();
 
     // Enable global interrupts
-    sei();
+  sei();
 }
 
 void loop() {
-    long distance = 0;
+  // put your main code here, to run repeatedly:
+long distance = 0; 
 
-    switch (type_sensor) {
-        case 0:
-            distance = US();
-            break;
-        case 1:
-            distance = IR();
-            break;
-        default:
-            break;
-    }
-
-    light(distance);
+switch (type_sensor) {
+  case 0:
+    distance = US();
+    break;
+  case 1:
+    distance = IR();
+    break;
+  default:
+       break;
 }
 
+light(distance);
+
+}
+
+
+
+
 //------------------------------------------------------------------------------------------
-// Print a string for the loop
+//To print
+//Print a string for the loop
 void printString(const char* str) {
-    while (*str) {
-        while (!(UCSR0A & (1 << UDRE0))); // Wait for empty transmit buffer
-        UDR0 = *str++;                    // Put data into buffer, sends the data
-    }
+  while (*str) {
+    while (!(UCSR0A & (1 << UDRE0))); // Wait for empty transmit buffer
+    UDR0 = *str++;                    // Put data into buffer, sends the data
+  }
 }
 
-// Set up text transmitter
-void set_text_monitor() {
-    unsigned int baud = 9600;
-    unsigned int ubrr = F_CPU / 16 / baud - 1;
 
-    // Set the baud rate
-    UBRR0H = (unsigned char)(ubrr >> 8);
-    UBRR0L = (unsigned char)(ubrr);
-    
-    // Enable receiver and transmitter
-    UCSR0B = (1 << RXEN0) | (1 << TXEN0);
-    
-    // Set frame format: 8 data bits, 1 stop bit
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
-}
+// set up text transmitter
+void set_text_monitor(){
+    // Set the baud rate to 9600
+  unsigned int baud = 9600;
+  unsigned int ubrr = F_CPU / 16 / baud - 1;
 
-//------------------------------------------------------------------------------------------
-// To use US sensor
-void set_US_sensor() {
-    setupPWM();
-    setupTimer1();
-    setupInterrupt();
+  // Set the baud rate
+  UBRR0H = (unsigned char)(ubrr >> 8); // Set baud rate high byte
+  UBRR0L = (unsigned char)(ubrr);       // Set baud rate low byte
+
+  // Enable receiver and transmitter
+  UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+
+  // Set frame format: 8 data bits, 1 stop bit
+  UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
+  }
+
+  //------------------------------------------------------------------------------------------
+  //To use US sensor
+
+//Set a US sensor
+
+void set_US_sensor(){
+  // Set up the PWM signal on trigger pin (D11) using Timer2
+  setupPWM();
+
+  // Set up Timer1 for capturing echo pulse width
+  setupTimer1();
+
+  // Set up external interrupt on echo pin (D2)
+  setupInterrupt();
 }
 
 // Interrupt service routine to capture the echo pulse width
 ISR(INT0_vect) {
-    if (PIND & (1 << PD2)) { // Check if Echo pin (D2) is HIGH
-        TCNT1 = 0; // Reset Timer1
-        TCCR1B |= (1 << CS11); // Start Timer1 with prescaler 8
-    } else {
-        TCCR1B &= ~(1 << CS11); // Stop Timer1
-        duration = TCNT1; // Capture the pulse width
-        echoReceived = true;
-    }
+  if (PIND & (1 << PD2)) { // Check if Echo pin (D2) is HIGH
+    TCNT1 = 0;             // Reset Timer1
+    TCCR1B |= (1 << CS11);  // Start Timer1 with prescaler 8
+  } else {
+    TCCR1B &= ~(1 << CS11); // Stop Timer1
+    duration = TCNT1;       // Capture the pulse width
+    echoReceived = true;
+  }
 }
 
 // Set up Timer2 for PWM generation on OC2A (D11)
 void setupPWM() {
-    DDRB |= (1 << DDB3); // Set OC2A (D11) as output
+  DDRB |= (1 << DDB3);   // Set OC2A (D11) as output
 
-    // Set Timer2 for Fast PWM, non-inverted on OC2A
-    TCCR2A = (1 << WGM21) | (1 << WGM20) | (1 << COM2A1);
-    TCCR2B = (1 << CS21); // Prescaler of 8
-    OCR2A = 100; // Set the duty cycle (adjust as needed)
+  // Set Timer2 for Fast PWM, non-inverted on OC2A
+  TCCR2A = (1 << WGM21) | (1 << WGM20) | (1 << COM2A1);
+  TCCR2B = (1 << CS21);  // Prescaler of 8
+  OCR2A = 100;           // Set the duty cycle (adjust as needed)
 }
 
 // Set up Timer1 to capture echo pulse width
 void setupTimer1() {
-    TCCR1A = 0; // Normal operation (no PWM)
-    TCCR1B = 0; // Timer stopped initially
-    TCNT1 = 0; // Clear the counter
+  TCCR1A = 0;  // Normal operation (no PWM)
+  TCCR1B = 0;  // Timer stopped initially
+  TCNT1 = 0;   // Clear the counter
 }
 
 // Set up external interrupt on INT0 (D2)
 void setupInterrupt() {
-    EIMSK |= (1 << INT0); // Enable external interrupt INT0
-    EICRA |= (1 << ISC00); // Trigger on any edge (rising/falling)
+  EIMSK |= (1 << INT0);   // Enable external interrupt INT0
+  EICRA |= (1 << ISC00);  // Trigger on any edge (rising/falling)
 }
 
-long US() {
-    if (echoReceived) {
-        // Convert pulse width to distance in cm
-        long distance = duration * 0.034 / 2;
+long US(){
+  
+   if (echoReceived) {
+    // Convert pulse width to distance in cm
+    long distance = duration * 0.034 / 2; // Convert to distance in cm
+ // Convert pulse width to cm
 
-        // Reset echo flag
-        echoReceived = false;
+    // Output distance value over Serial
+    //printString("Distance: ");
+    String distanceString = String(distance); // Convert long to String
+    //printString(distanceString.c_str()); 
+    //printString(" cm\n");
 
-        // Add a short delay between measurements
-        _delay_ms(50);
-        return distance;
-    }
-    return -1; // Return -1 if no echo received
-}
+    // Reset echo flag
+    echoReceived = false;
+
+    // Add a short delay between measurements
+    _delay_ms(50);
+    return distance;
+  }}
 
 //------------------------------------------------------------------------------------------
-// Set up light
-void set_light_board() {
-    // Set pin 11 (PB3) and pin 13 (PB5) as output
-    DDRB |= (1 << DDB3) | (1 << DDB5);
-    
-    // Configure Timer2 for Fast PWM
-    TCCR2A = (1 << WGM21) | (1 << WGM20) | (1 << COM2A1); // Fast PWM, non-inverting mode
-    TCCR2B = (1 << CS20); // No prescaler
-}
+//set_up light
 
-void light(long x) {
+  void set_light_board(){
+      // Set pin 11 (PB3) as output
+  DDRB |= (1 << DDB3);
+  DDRB |= (1 << DDB5);
+  
+  // Configure Timer2 for Fast PWM
+  TCCR2A = (1 << WGM21) | (1 << WGM20) | (1 << COM2A1); // Fast PWM, non-inverting mode
+  TCCR2B = (1 << CS20); // No prescaler
+    
+    }
+
+
+    void light(long x){
+      long ans = 0;
+
     if (x <= 15) {
-        OCR2A = 0; // Minimum brightness
+        OCR2A = 0; // d1 or less
         flash();
     } else if (x >= 42) {
-        OCR2A = 254; // Maximum brightness
+        OCR2A = 254; // d2 or more
         flash();
     } else {
-        // Linearly increase from 0 to 254
-        OCR2A = ((x - 15) * 254) / (42 - 15);
+        // Linearly increase from d1 to d2
+        OCR2A = ((x - 15) * 254) / (42 - 15); // Scale to range [0, 254]
     }
-}
+      
+      }
 
-void flash() {
-    // Turn the LED on
-    PORTB |= (1 << PORTB5);
-    delay(500);
-    // Turn the LED off
-    PORTB &= ~(1 << PORTB5);
-    delay(500);
-}
+void flash(){
+       
+  // Turn the LED on
+  PORTB |= (1 << PORTB5);
+  delay(500);
 
-//------------------------------------------------------------------------------------------
-// To use IR sensor
-void set_IR_sensor() {
+  // Turn the LED off
+  PORTB &= ~(1 << PORTB5);
+  delay(500);
+        
+        }
+
+        //------------------------------------------------------------------------------------------
+  //To use IR sensor
+
+void set_IR_sensor(){
     // Configure the ADC
-    ADMUX = (1 << REFS0); // Reference voltage set to AVcc (5V)
-    ADCSRA = (1 << ADEN) | (1 << ADPS2) | (1 << ADPS0); // Enable ADC and set prescaler to 16
-}
+  ADMUX = (1 << REFS0);  // Reference voltage set to AVcc (5V)
+  ADCSRA = (1 << ADEN)   // Enable ADC
+         | (1 << ADPS2)  // Set prescaler to 16 (for 16 MHz clock)
+         | (1 << ADPS0); // This results in an ADC clock of 1 MHz
+
+  }
+
 
 uint16_t readADC(uint8_t pin) {
-    // Select the appropriate input pin (analog pin number)
-    ADMUX = (ADMUX & 0xF0) | (pin & 0x0F); // Clear last 4 bits and set new pin
-    ADCSRA |= (1 << ADSC); // Start the conversion
-    
-    // Wait for the conversion to complete
-    while (ADCSRA & (1 << ADSC));
-    
-    // Return the ADC value (10-bit resolution)
-    return ADC;
+  // Select the appropriate input pin (analog pin number)
+  ADMUX = (ADMUX & 0xF0) | (pin & 0x0F);  // Clear last 4 bits and set new pin
+  ADCSRA |= (1 << ADSC);  // Start the conversion
+  
+  // Wait for the conversion to complete
+  while (ADCSRA & (1 << ADSC));
+  
+  // Return the ADC value (10-bit resolution)
+  return ADC;
 }
 
-long IR() {
-    // Read the analog value from the sensor connected to sensorPin (A2)
-    uint16_t sensorValue = readADC(sensorPin - A0); // Adjust for the correct pin number
 
-    // Convert the analog value to voltage (0V to 5V)
-    float voltage = sensorValue * (5.0 / 1023.0);
+long IR(){
 
-    // Convert the voltage to distance in cm (approximation)
-    float distance = 29.988 * pow(voltage, -1.173);
+  // Read the analog value from the sensor connected to sensorPin (A2)
+  uint16_t sensorValue = readADC(sensorPin - A0);  // Subtract A0 to get the right pin number
 
-    // Wait for a short period before taking the next reading
-    delay(100);
-    return static_cast<long>(distance);
-}
+  // Convert the analog value to voltage (0V to 5V)
+  float voltage = sensorValue * (5.0 / 1023.0);
+
+  // Convert the voltage to distance in cm (approximation)
+  // The relationship between distance and voltage is non-linear.
+  float distance = 29.988 * pow(voltage , -1.173);
+
+  // Wait for a short period before taking the next reading
+  delay(100);
+  return (int)distance; 
+
+  }
