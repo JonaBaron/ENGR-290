@@ -1,5 +1,5 @@
 //Selector sensor
-const int type_sensor = 0; // 0 or 1 (US or IR)
+const int type_sensor = 1; // 0 or 1 (US or IR)
 
 // Constants for pin connections for US sensor
 const int triggerPin = 11; // OC2A, pin D11
@@ -47,6 +47,10 @@ switch (type_sensor) {
   default:
        break;
 }
+
+    String distanceString = String(distance); // Convert long to String
+    printString(distanceString.c_str());
+     printString("\n");
 
 light(distance);
 
@@ -99,17 +103,17 @@ void set_US_sensor(){
   setupInterrupt();
 }
 
-// Interrupt service routine to capture the echo pulse width
 ISR(INT0_vect) {
-  if (PIND & (1 << PD2)) { // Check if Echo pin (D2) is HIGH
-    TCNT1 = 0;             // Reset Timer1
-    TCCR1B |= (1 << CS11);  // Start Timer1 with prescaler 8
-  } else {
-    TCCR1B &= ~(1 << CS11); // Stop Timer1
-    duration = TCNT1;       // Capture the pulse width
-    echoReceived = true;
-  }
+    if (PIND & (1 << PD2)) { // Echo pin HIGH
+        TCNT1 = 0;          // Reset Timer1
+        TCCR1B |= (1 << CS11); // Start Timer1
+    } else { // Echo pin LOW
+        TCCR1B &= ~(1 << CS11); // Stop Timer1
+        duration = TCNT1; // Store pulse width
+        echoReceived = true; // Set flag
+    }
 }
+
 
 // Set up Timer2 for PWM generation on OC2A (D11)
 void setupPWM() {
@@ -137,9 +141,8 @@ void setupInterrupt() {
 long US(){
   
    if (echoReceived) {
-    // Convert pulse width to distance in cm
-    long distance = duration * 0.034 / 2; // Convert to distance in cm
- // Convert pulse width to cm
+long distance = (duration * 0.5) * (0.034 / 2); // Convert to distance in cm
+
 
     // Output distance value over Serial
     //printString("Distance: ");
@@ -223,19 +226,61 @@ uint16_t readADC(uint8_t pin) {
   return ADC;
 }
 
+float readSmoothVoltage(uint8_t pin, int samples) {
+  float total = 0.0;
+  for (int i = 0; i < samples; i++) {
+    total += readADC(pin - A0) * 0.0048828125;  // Convert ADC to voltage
+    delay(10);  // Small delay between readings
+  }
+  return total / samples;  // Return the average voltage
+}
 
 long IR(){
 
-  // Read the analog value from the sensor connected to sensorPin (A2)
-  uint16_t sensorValue = readADC(sensorPin - A0);  // Subtract A0 to get the right pin number
-
-  // Convert the analog value to voltage (0V to 5V)
-  float voltage = sensorValue * (5.0 / 1023.0);
-
-  // Convert the voltage to distance in cm (approximation)
-  // The relationship between distance and voltage is non-linear.
-  float distance = 29.988 * pow(voltage , -1.173);
-
+  float voltage = readSmoothVoltage(sensorPin, 10);
+  
+  
+  float distance;
+  
+  
+  // Finer piecewise linear mapping based on graph data
+  if (voltage > 2.9 && voltage <= 3.0) {
+    // 5 cm to 6 cm
+    distance = 5 + (6 - 5) * (3.0 - voltage) / (3.0 - 2.9);
+  }
+  else if (voltage > 2.7 && voltage <= 2.9) {
+    // 6 cm to 7 cm
+    distance = 6 + (7 - 6) * (2.9 - voltage) / (2.9 - 2.7);
+  }
+  else if (voltage > 2.4 && voltage <= 2.7) {
+    // 7 cm to 8 cm
+    distance = 7 + (8 - 7) * (2.7 - voltage) / (2.7 - 2.4);
+  }
+  else if (voltage > 2.2 && voltage <= 2.4) {
+    // 8 cm to 10 cm
+    distance = 8 + (10 - 8) * (2.4 - voltage) / (2.4 - 2.2);
+  }
+  else if (voltage > 1.8 && voltage <= 2.2) {
+    // 10 cm to 15 cm
+    distance = 10 + (15 - 10) * (2.2 - voltage) / (2.2 - 1.8);
+  }
+  else if (voltage > 1.3 && voltage <= 1.8) {
+    // 15 cm to 25 cm
+    distance = 15 + (25 - 15) * (1.8 - voltage) / (1.8 - 1.3);
+  }
+  else if (voltage > 0.8 && voltage <= 1.3) {
+    // 25 cm to 50 cm
+    distance = 25 + (50 - 25) * (1.3 - voltage) / (1.3 - 0.8);
+  }
+  else if (voltage > 0.3 && voltage <= 0.8) {
+    // 50 cm to 80 cm
+    distance = 50 + (80 - 50) * (0.8 - voltage) / (0.8 - 0.3);
+  }
+  else {
+    // Beyond 80 cm
+    distance = 80;
+  }
+  
   // Wait for a short period before taking the next reading
   delay(100);
   return (int)distance; 
